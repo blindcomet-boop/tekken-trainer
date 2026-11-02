@@ -1,0 +1,557 @@
+<title>초풍·웨이브 트레이너</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+/* Layout: training-mode HUD — live input + frame log on the left, judgement panel on the right, settings below */
+:root{
+  --bg:#0d0f15; --panel:#151923; --panel2:#1c2131; --line:#283044;
+  --fg:#e7e9f0; --muted:#8b93a8; --volt:#7ea6ff; --volt-hi:#d3e0ff; --ink:#0a0f1e;
+  --gold:#f5c451; --miss:#ff7070; --ok:#5fd6a4;
+  --f-display:"Black Han Sans","IBM Plex Sans KR","Malgun Gothic",sans-serif;
+  --f-body:"IBM Plex Sans KR","Malgun Gothic",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);line-height:1.5}
+.app{max-width:1120px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:1px solid var(--line);padding-bottom:14px}
+h1{font-family:var(--f-display);font-weight:400;font-size:clamp(26px,4vw,36px);margin:0;line-height:1.1;text-wrap:balance}
+h1 .v{color:var(--volt)}
+.sub{margin:6px 0 0;color:var(--muted);font-size:13px}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button{font:inherit;color:var(--fg);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer}
+button:hover{border-color:var(--volt)}
+button:focus-visible{outline:2px solid var(--volt-hi);outline-offset:2px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel2)}
+.seg button{border:0;border-radius:0;background:transparent;padding:7px 14px}
+.seg button[aria-pressed="true"]{background:var(--volt);color:var(--ink);font-weight:700}
+.hint{background:var(--panel2);border:1px dashed var(--volt);color:var(--volt-hi);border-radius:8px;padding:10px 14px;font-size:14px;cursor:pointer}
+.grid{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:820px){.grid{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
+h2{font-size:13px;font-weight:500;letter-spacing:.04em;color:var(--muted);margin:0 0 10px;display:flex;justify-content:space-between;gap:8px}
+/* live input */
+.live{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.pad{display:grid;grid-template-columns:repeat(3,38px);gap:4px}
+.pad div,.btns div{height:38px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);display:grid;place-items:center;font-family:var(--f-mono);font-size:15px;color:var(--muted);transition:background .04s}
+.pad div.on{background:var(--volt);color:var(--ink);border-color:var(--volt)}
+.btns{display:grid;grid-template-columns:repeat(2,46px);gap:6px}
+.btns div{border-radius:50%;height:46px;flex-direction:column;line-height:1.1;font-size:15px}
+.btns div small{font-size:10px;color:var(--muted)}
+.btns div.on{background:var(--gold);color:var(--ink);border-color:var(--gold)}
+.btns div.on small{color:var(--ink)}
+.cur{font-family:var(--f-display);font-size:34px;min-width:64px;color:var(--volt-hi)}
+/* log */
+.log{list-style:none;margin:0;padding:0;font-family:var(--f-mono);font-size:14px;max-height:430px;overflow:hidden}
+.log li{display:grid;grid-template-columns:26px 44px minmax(0,1fr) 46px;gap:6px;align-items:center;padding:3px 4px;border-bottom:1px solid var(--line)}
+.log li:first-child{background:var(--panel2)}
+.log .g{font-size:17px;text-align:center}
+.log .n{color:var(--muted)}
+.log .b{display:flex;gap:3px}
+.chip{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 4px;border-radius:4px;background:var(--gold);color:var(--ink);font-weight:700;font-size:12px}
+.log .f{text-align:right;font-variant-numeric:tabular-nums}
+.tag{font-size:11px;color:var(--gold);border:1px solid var(--gold);border-radius:4px;padding:0 5px;font-family:var(--f-body)}
+/* verdict */
+.verdict{display:flex;flex-direction:column;gap:4px;min-height:132px;justify-content:center}
+.verdict .big{font-family:var(--f-display);font-size:clamp(38px,6vw,58px);line-height:1.05}
+.verdict .det{font-size:15px}
+.verdict .gap{font-family:var(--f-mono);font-size:13px;color:var(--muted)}
+.verdict.ew .big{color:var(--volt-hi);text-shadow:0 0 18px var(--volt),0 0 4px var(--volt)}
+.verdict.late .big{color:var(--gold)}
+.verdict.bad .big{color:var(--miss)}
+.verdict.idle .big{color:var(--muted)}
+.verdict.flash{animation:flash .35s ease-out}
+@keyframes flash{from{background:var(--panel2)}to{background:var(--panel)}}
+@media (prefers-reduced-motion:reduce){.verdict.flash{animation:none}.pad div,.btns div{transition:none}}
+.howto{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:14px;color:var(--muted)}
+kbd{font-family:var(--f-mono);font-size:13px;background:var(--panel2);border:1px solid var(--line);border-bottom-width:3px;border-radius:5px;padding:1px 7px;color:var(--fg)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.stat{background:var(--panel2);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.stat span{font-size:12px;color:var(--muted)}
+.stat b{font-family:var(--f-mono);font-size:22px;font-variant-numeric:tabular-nums}
+.recent{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.recent i{width:14px;height:14px;border-radius:3px;background:var(--line)}
+.recent i.ew{background:var(--volt)} .recent i.late{background:var(--gold)} .recent i.bad{background:var(--miss)}
+.chart{overflow-x:auto}
+.chart svg{display:block;width:100%;min-width:420px;height:auto}
+.chart text{fill:var(--muted);font-family:var(--f-mono);font-size:11px}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.row{display:flex;justify-content:flex-end;gap:8px}
+/* settings */
+details.panel summary{cursor:pointer;font-weight:500}
+.binds{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:12px}
+.bind{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--panel2);border-radius:8px;padding:6px 6px 6px 12px;font-size:14px}
+.bind button{font-family:var(--f-mono);min-width:72px;background:var(--panel)}
+.bind button.wait{border-color:var(--gold);color:var(--gold)}
+.presets{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center;font-size:13px;color:var(--muted)}
+.notes{color:var(--muted);font-size:13px;max-width:72ch}
+.notes ul{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.notes b{color:var(--fg);font-weight:500}
+</style>
+
+<div class="app">
+  <header>
+    <div>
+      <h1>초풍<span class="v">·</span>웨이브 트레이너</h1>
+      <p class="sub">철권8 키보드 입력 연습 · 60fps(1F = 16.7ms) 기준으로 입력을 잘라서 판정합니다</p>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="연습 모드">
+        <button id="mEwgf" data-mode="ewgf">초풍</button>
+        <button id="mWave" data-mode="wave">웨이브</button>
+      </div>
+      <button id="sideBtn" title="캐릭터가 바라보는 방향">1P · 오른쪽 보기</button>
+      <button id="soundBtn">소리 켬</button>
+    </div>
+  </header>
+
+  <div id="focusHint" class="hint" hidden>페이지를 한 번 클릭하면 키 입력을 받기 시작해요. 한/영 상태는 상관없어요.</div>
+
+  <main class="grid">
+    <section class="col">
+      <div class="panel">
+        <h2><span>현재 입력</span><span>앞 = → 기준</span></h2>
+        <div class="live">
+          <div class="pad" id="pad"></div>
+          <div class="btns" id="btns"></div>
+          <div class="cur" id="cur">n</div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2><span>입력 기록</span><span>유지 프레임</span></h2>
+        <ol class="log" id="log"></ol>
+      </div>
+    </section>
+
+    <section class="col">
+      <div id="ewgfPanel" class="col">
+        <div class="panel">
+          <div class="verdict idle" id="ewVerdict"></div>
+          <div class="howto" id="ewHow"></div>
+        </div>
+        <div class="stats" id="ewStats"></div>
+        <div class="panel">
+          <h2><span>df → 2 간격, 최근 30회 (ms)</span><span>위쪽이 최신</span></h2>
+          <div class="chart" id="gapChart"></div>
+          <div class="legend">
+            <span><i style="background:var(--volt)"></i>초풍</span>
+            <span><i style="background:var(--gold)"></i>풍신권(늦음)</span>
+            <span><i style="background:var(--miss)"></i>실패</span>
+            <span>음영 = 게임에서 같은 프레임에 들어갈 수 있는 범위 (0에 가까울수록 확률 높음)</span>
+          </div>
+        </div>
+        <div class="row"><button id="ewReset">초풍 기록 지우기</button></div>
+      </div>
+
+      <div id="wavePanel" class="col" hidden>
+        <div class="panel">
+          <div class="verdict idle" id="waveVerdict"></div>
+          <div class="howto" id="waveHow"></div>
+        </div>
+        <div class="stats" id="waveStats"></div>
+        <div class="panel">
+          <h2><span>앉아대시 1회당 걸린 프레임, 최근 40회</span><span>막대 사이 틈 = 연속 끊김</span></h2>
+          <div class="chart" id="waveChart"></div>
+        </div>
+        <div class="row"><button id="waveReset">웨이브 기록 지우기</button></div>
+      </div>
+    </section>
+  </main>
+
+  <details class="panel" id="settings">
+    <summary>키 설정</summary>
+    <div class="presets">
+      <span>프리셋</span>
+      <button data-preset="wasd">WASD + UIJK</button>
+      <button data-preset="hitbox">히트박스형 (위 = Space)</button>
+      <button data-preset="arrows">방향키 + AS/ZX</button>
+    </div>
+    <div class="binds" id="binds"></div>
+    <p class="sub">버튼을 누른 뒤 원하는 키를 누르세요. Esc는 취소. 이미 쓰는 키를 고르면 서로 바뀝니다.</p>
+  </details>
+
+  <section class="notes">
+    <b>판정 방식</b>
+    <ul>
+      <li>초풍은 <b>df가 들어온 바로 그 프레임에 2</b>가 들어가야 합니다. 1F라도 늦으면 일반 풍신권입니다.</li>
+      <li>브라우저의 프레임 경계는 게임과 어긋나 있어서, 판정 결과보다 <b>df → 2 간격(ms)</b>이 더 정확한 지표입니다. 간격이 0ms면 항상 같은 프레임이고, 8ms면 대략 절반, 17ms를 넘으면 절대 같은 프레임에 들어가지 않습니다.</li>
+      <li>동시 입력 처리: 좌+우는 중립, 위+아래는 위(히트박스 방식). 게임 설정과 다를 수 있습니다.</li>
+      <li>아래+앞+2를 같이 눌렀는데 패드나 버튼에 불이 안 들어오면 키보드가 그 조합을 못 받는 것(고스팅)입니다. 키 배치를 바꿔 보세요.</li>
+      <li>웨이브는 입력 리듬만 잽니다. 너무 빠르게 치면 게임에서는 앉아대시가 다 나오지 않을 수 있으니 실제 게임에서도 확인하세요.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+const FRAME = 1000 / 60;
+const WAVE_GAP = 40;
+const ACTIONS = [["up","위"],["down","아래"],["left","왼쪽"],["right","오른쪽"],["b1","1 (LP)"],["b2","2 (RP)"],["b3","3 (LK)"],["b4","4 (RK)"]];
+const PRESETS = {
+  wasd:  {up:"KeyW",down:"KeyS",left:"KeyA",right:"KeyD",b1:"KeyU",b2:"KeyI",b3:"KeyJ",b4:"KeyK"},
+  hitbox:{up:"Space",down:"KeyS",left:"KeyA",right:"KeyD",b1:"KeyU",b2:"KeyI",b3:"KeyJ",b4:"KeyK"},
+  arrows:{up:"ArrowUp",down:"ArrowDown",left:"ArrowLeft",right:"ArrowRight",b1:"KeyA",b2:"KeyS",b3:"KeyZ",b4:"KeyX"}
+};
+const GLYPH = {1:"↙",2:"↓",3:"↘",4:"←",5:"N",6:"→",7:"↖",8:"↑",9:"↗"};
+const NOTE  = {1:"d/b",2:"d",3:"d/f",4:"b",5:"n",6:"f",7:"u/b",8:"u",9:"u/f"};
+const PAD_ORDER = [7,8,9,4,5,6,1,2,3];
+
+let prefs = {binds:{...PRESETS.wasd}, side:1, mode:"ewgf", sound:true};
+try { const s = JSON.parse(localStorage.getItem("tk8trainer")); if (s && s.binds) prefs = {...prefs, ...s}; } catch (e) {}
+function save(){ try { localStorage.setItem("tk8trainer", JSON.stringify(prefs)); } catch (e) {} }
+
+const held = {up:false,down:false,left:false,right:false,b1:false,b2:false,b3:false,b4:false};
+let codeToAction = {};
+function rebuildMap(){ codeToAction = {}; for (const [a] of ACTIONS) codeToAction[prefs.binds[a]] = a; }
+rebuildMap();
+
+const $ = id => document.getElementById(id);
+const frameOf = t => Math.floor(t / FRAME);
+function keyLabel(code){
+  if (!code) return "—";
+  const m = {Space:"Space",ArrowUp:"↑",ArrowDown:"↓",ArrowLeft:"←",ArrowRight:"→",ShiftLeft:"LShift",ShiftRight:"RShift",ControlLeft:"LCtrl",ControlRight:"RCtrl",AltLeft:"LAlt",AltRight:"RAlt",Semicolon:";",Quote:"'",Comma:",",Period:".",Slash:"/",BracketLeft:"[",BracketRight:"]",Backslash:"\\",Minus:"-",Equal:"="};
+  if (m[code]) return m[code];
+  return code.replace(/^Key/,"").replace(/^Digit/,"").replace(/^Numpad/,"Num");
+}
+
+// forward-relative numpad direction
+function curDir(){
+  const L = held.left, R = held.right;
+  let h = (R && !L) ? 1 : (L && !R) ? -1 : 0;
+  if (prefs.side === 2) h = -h;
+  const v = held.up ? 1 : (held.down ? -1 : 0);
+  return 5 + h + v * 3;
+}
+
+// ---- input timeline ----
+const runs = [];      // direction runs {dir, frame, t}
+const segs = [];      // log rows {frame, dir, pressed:Set}
+let exampleLog = true;
+const attempts = [];
+const wave = {last:null, chain:0, chainId:0, best:0, cycles:[], errors:0, lastErr:"", live:false, lastChain:0};
+
+function onInput(action, down, t){
+  if (held[action] === down) return;
+  if (exampleLog) { exampleLog = false; segs.length = 0; }
+  held[action] = down;
+  const f = frameOf(t);
+  const dir = curDir();
+
+  const last = runs[runs.length - 1];
+  if (!last) runs.push({dir, frame:f, t});
+  else if (last.dir !== dir) {
+    if (last.frame === f) {
+      last.dir = dir; last.t = t;
+      const prev = runs[runs.length - 2];
+      if (prev && prev.dir === dir) runs.pop();
+    } else {
+      runs.push({dir, frame:f, t});
+      onRunFinalized(runs.length - 2);
+    }
+  }
+  if (runs.length > 400) runs.splice(0, 200);
+
+  const btn = action[0] === "b" ? action[1] : null;
+  const ls = segs[segs.length - 1];
+  if (ls && ls.frame === f) { ls.dir = dir; if (btn && down) ls.pressed.add(btn); }
+  else if (!ls || ls.dir !== dir || (btn && down)) {
+    segs.push({frame:f, dir, pressed:new Set(btn && down ? [btn] : [])});
+    if (segs.length > 60) segs.shift();
+  }
+
+  if (btn === "2" && down) { const P = f; setTimeout(() => judge(P, t), 130); }
+  renderLive(); renderLog();
+}
+
+// ---- EWGF judgement ----
+function runAt(frame){ for (let i = runs.length - 1; i >= 0; i--) if (runs[i].frame <= frame) return i; return -1; }
+function judge(P, t2){
+  const i = runAt(P); if (i < 0) return;
+  const d = k => runs[k] ? runs[k].dir : null;
+  const r0 = runs[i];
+  // only count it as an attempt if forward was released within the last 30F
+  let hasF = false;
+  for (let k = i - 1; k >= Math.max(0, i - 5); k--) {
+    if (runs[k].dir === 6 && runs[k + 1] && P - runs[k + 1].frame <= 30) { hasF = true; break; }
+  }
+  if (!hasF) return;
+
+  let type, gap = null, frames = 0, motion = null;
+  if (r0.dir === 3) {
+    gap = t2 - r0.t;
+    if (d(i-1) === 2 && d(i-2) === 5 && d(i-3) === 6) {
+      frames = P - r0.frame;
+      type = frames === 0 ? "ew" : "late";
+      motion = r0.frame - runs[i-2].frame;
+    } else if (d(i-1) === 5 && d(i-2) === 6) type = "skipD";
+    else if (d(i-1) === 2 && d(i-2) === 6) type = "noN";
+    else type = "other";
+  } else if (r0.dir === 2) {
+    const nx = runs[i + 1];
+    if (nx && nx.dir === 3 && nx.t - t2 < 120) { gap = t2 - nx.t; frames = nx.frame - P; }
+    type = (d(i-1) === 5 && d(i-2) === 6) ? "early" : (d(i-1) === 6 ? "noN" : "other");
+  } else type = "other";
+
+  const seq = [];
+  for (let k = Math.max(0, i - 3); k <= i; k++) seq.push(NOTE[runs[k].dir]);
+  const p = gap === null ? null : Math.max(0, 1 - Math.abs(gap) / FRAME);
+  attempts.push({type, gap, p, frames, motion, seq:seq.join(", ")});
+  if (attempts.length > 200) attempts.shift();
+  sfx(type);
+  renderEwgf(true);
+}
+
+// ---- wavedash ----
+function onRunFinalized(k){
+  const run = runs[k]; if (!run || run.counted) return;
+  run.counted = true;
+  const d = x => runs[x] ? runs[x].dir : null;
+  const active = wave.last !== null && run.frame - wave.last <= WAVE_GAP;
+  if (run.dir === 3) {
+    if (d(k-1) === 2 && d(k-2) === 5 && (d(k-3) === 6 || d(k-3) === 3)) {
+      if (active) {
+        wave.cycles.push({f:run.frame - wave.last, chain:wave.chainId});
+        if (wave.cycles.length > 120) wave.cycles.shift();
+        wave.chain++;
+      } else { wave.chainId++; wave.chain = 1; }
+      wave.last = run.frame; wave.live = true;
+      wave.best = Math.max(wave.best, wave.chain);
+      renderWave(true);
+      return;
+    }
+    if (d(k-1) === 5 && d(k-2) === 3 && active) { wave.errors++; wave.lastErr = "n → d/f: d를 거치지 않았어요"; }
+  } else if (run.dir === 2 && d(k-1) === 3 && active) { wave.errors++; wave.lastErr = "d/f → d: 중립(n)을 거치지 않았어요"; }
+  renderWave(false);
+}
+
+// ---- sound ----
+let actx = null;
+function sfx(type){
+  if (!prefs.sound) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    const now = actx.currentTime, g = actx.createGain();
+    g.connect(actx.destination);
+    const o = actx.createOscillator();
+    if (type === "ew") {
+      o.type = "square"; o.frequency.setValueAtTime(1900, now); o.frequency.exponentialRampToValueAtTime(240, now + .14);
+      g.gain.setValueAtTime(.07, now); g.gain.exponentialRampToValueAtTime(.001, now + .16);
+    } else if (type === "late") {
+      o.type = "sine"; o.frequency.setValueAtTime(260, now); o.frequency.exponentialRampToValueAtTime(110, now + .12);
+      g.gain.setValueAtTime(.12, now); g.gain.exponentialRampToValueAtTime(.001, now + .14);
+    } else {
+      o.type = "triangle"; o.frequency.setValueAtTime(140, now);
+      g.gain.setValueAtTime(.06, now); g.gain.exponentialRampToValueAtTime(.001, now + .08);
+    }
+    o.connect(g); o.start(now); o.stop(now + .2);
+  } catch (e) {}
+}
+
+// ---- rendering ----
+function buildStatic(){
+  $("pad").innerHTML = PAD_ORDER.map(n => `<div data-d="${n}">${GLYPH[n]}</div>`).join("");
+  renderButtons();
+}
+function renderButtons(){
+  $("btns").innerHTML = ["1","2","3","4"].map(b => `<div data-b="${b}">${b}<small>${keyLabel(prefs.binds["b"+b])}</small></div>`).join("");
+}
+function renderLive(){
+  const dir = curDir();
+  for (const el of $("pad").children) el.classList.toggle("on", +el.dataset.d === dir && dir !== 5);
+  for (const el of $("btns").children) el.classList.toggle("on", held["b" + el.dataset.b]);
+  const bs = ["1","2","3","4"].filter(b => held["b"+b]).join("+");
+  $("cur").textContent = NOTE[dir] + (bs ? "+" + bs : "");
+}
+
+const EXAMPLE = [{dir:3,p:["2"],f:12},{dir:2,p:[],f:3},{dir:5,p:[],f:2},{dir:6,p:[],f:4}];
+function renderLog(){
+  const now = frameOf(performance.now());
+  let rows;
+  if (exampleLog) {
+    rows = EXAMPLE.map((r, i) => `<li><span class="g">${GLYPH[r.dir]}</span><span class="n">${NOTE[r.dir]}</span><span class="b">${r.p.map(b => `<span class="chip">${b}</span>`).join("")}${i === 0 ? ' <span class="tag">예시</span>' : ""}</span><span class="f">${r.f}F</span></li>`);
+  } else {
+    rows = [];
+    for (let i = segs.length - 1; i >= 0 && rows.length < 18; i--) {
+      const s = segs[i];
+      const dur = (i === segs.length - 1 ? now + 1 : segs[i + 1].frame) - s.frame;
+      rows.push(`<li><span class="g">${GLYPH[s.dir]}</span><span class="n">${NOTE[s.dir]}</span><span class="b">${[...s.pressed].sort().map(b => `<span class="chip">${b}</span>`).join("")}</span><span class="f"${i === segs.length - 1 ? ' id="liveF"' : ""}>${dur > 99 ? "99+" : dur}F</span></li>`);
+    }
+  }
+  $("log").innerHTML = rows.join("");
+}
+
+const fwdKey = () => prefs.binds[prefs.side === 1 ? "right" : "left"];
+function renderHow(){
+  const F = `<kbd>${keyLabel(fwdKey())}</kbd>`, D = `<kbd>${keyLabel(prefs.binds.down)}</kbd>`, B2 = `<kbd>${keyLabel(prefs.binds.b2)}</kbd>`;
+  $("ewHow").innerHTML = `앞 ${F} → 손 떼기 → 아래 ${D} 누른 채로 → ${F} + ${B2} 정확히 동시에`;
+  $("waveHow").innerHTML = `${F} → 떼기 → ${D} → ${D} 유지하며 ${F} → 둘 다 떼기 → ${D} → ${F} … 반복`;
+}
+
+const MSG = {
+  ew:    a => ["초풍!", "d/f와 2가 같은 프레임에 들어갔어요" + (a.motion !== null ? ` · f를 뗀 뒤 d/f까지 ${a.motion}F` : "")],
+  late:  a => ["풍신권", `2가 d/f보다 ${a.frames}F 늦었어요`],
+  early: a => ["2가 빠름", a.gap !== null ? `d/f보다 ${a.frames}F 먼저 2를 눌렀어요 (d+2)` : "d 상태에서 2를 눌렀어요. d/f를 만든 순간에 2를 같이 누르세요"],
+  noN:   a => ["중립 빠짐", "f에서 손을 완전히 떼지 않고 바로 d로 갔어요"],
+  skipD: a => ["d 생략", "f, n, d/f+2로 입력됐어요. 정석인 f, n, d, d/f+2로 연습하세요"],
+  other: a => ["커맨드 불일치", `입력 순서: ${a.seq}`]
+};
+const klass = t => t === "ew" ? "ew" : t === "late" ? "late" : "bad";
+const pct = x => (x * 100).toFixed(0) + "%";
+
+function renderEwgf(flash){
+  const v = $("ewVerdict");
+  const a = attempts[attempts.length - 1];
+  if (!a) {
+    v.className = "verdict idle";
+    v.innerHTML = `<div class="big">대기 중</div><div class="det">아래 순서대로 입력하면 바로 판정이 나와요.</div>`;
+  } else {
+    const [big, det] = MSG[a.type](a);
+    v.className = "verdict " + klass(a.type) + (flash ? " flash" : "");
+    const gapTxt = a.gap === null ? "" : `df → 2 간격 ${a.gap >= 0 ? "+" : ""}${a.gap.toFixed(1)}ms · 게임 프레임 기준 같은 프레임 확률 ≈ ${pct(a.p)}`;
+    v.innerHTML = `<div class="big">${big}</div><div class="det">${det}</div><div class="gap">${gapTxt}</div>`;
+  }
+  const n = attempts.length, ew = attempts.filter(x => x.type === "ew").length;
+  const recent = attempts.slice(-20).filter(x => x.gap !== null);
+  const avgAbs = recent.length ? recent.reduce((s, x) => s + Math.abs(x.gap), 0) / recent.length : null;
+  const avgP = recent.length ? recent.reduce((s, x) => s + x.p, 0) / recent.length : null;
+  let streak = 0; for (let i = n - 1; i >= 0 && attempts[i].type === "ew"; i--) streak++;
+  $("ewStats").innerHTML = `
+    <div class="stat"><span>시도</span><b>${n}</b></div>
+    <div class="stat"><span>초풍 성공률</span><b>${n ? pct(ew / n) : "—"}</b></div>
+    <div class="stat"><span>연속 초풍</span><b>${streak}</b></div>
+    <div class="stat"><span>평균 간격 (최근 20)</span><b>${avgAbs === null ? "—" : avgAbs.toFixed(1) + "ms"}</b></div>
+    <div class="stat"><span>게임 기준 예상 성공률</span><b>${avgP === null ? "—" : pct(avgP)}</b></div>
+    <div class="stat"><span>최근 10회</span><div class="recent">${attempts.slice(-10).map(x => `<i class="${klass(x.type)}" title="${MSG[x.type](x)[0]}"></i>`).join("") || '<span>아직 없음</span>'}</div></div>`;
+  renderGapChart();
+}
+
+function renderGapChart(){
+  const W = 600, H = 170, L = 30, R = 570, top = 14, bot = 136, RANGE = 50;
+  const x = g => L + (Math.max(-RANGE, Math.min(RANGE, g)) + RANGE) / (2 * RANGE) * (R - L);
+  const pts = attempts.filter(a => a.gap !== null).slice(-30).reverse();
+  const color = t => t === "ew" ? "var(--volt)" : t === "late" ? "var(--gold)" : "var(--miss)";
+  const ticks = [-50, -33.3, -16.7, 0, 16.7, 33.3, 50];
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="df와 2 사이 간격 분포">
+    <defs><linearGradient id="zone" x1="0" x2="1"><stop offset="0" stop-color="#7ea6ff" stop-opacity="0"/><stop offset=".5" stop-color="#7ea6ff" stop-opacity=".28"/><stop offset="1" stop-color="#7ea6ff" stop-opacity="0"/></linearGradient></defs>
+    <rect x="${x(-FRAME)}" y="${top}" width="${x(FRAME) - x(-FRAME)}" height="${bot - top}" fill="url(#zone)"/>`;
+  for (const t of ticks) s += `<line x1="${x(t)}" x2="${x(t)}" y1="${top}" y2="${bot}" stroke="var(--line)" stroke-width="${t === 0 ? 1.5 : 1}"/><text x="${x(t)}" y="${bot + 14}" text-anchor="middle">${t > 0 ? "+" : ""}${Math.round(t)}</text>`;
+  s += `<text x="${L}" y="${H - 4}">← 2를 먼저 누름</text><text x="${R}" y="${H - 4}" text-anchor="end">d/f를 먼저 누름 →</text>`;
+  pts.forEach((a, i) => {
+    const y = top + 6 + i * ((bot - top - 12) / 29);
+    s += `<circle cx="${x(a.gap)}" cy="${y}" r="${i === 0 ? 6 : 4}" fill="${color(a.type)}" ${i === 0 ? 'stroke="var(--volt-hi)" stroke-width="2"' : 'fill-opacity=".85"'}/>`;
+  });
+  if (!pts.length) s += `<text x="${W / 2}" y="${(top + bot) / 2}" text-anchor="middle">초풍을 시도하면 여기에 점이 찍혀요</text>`;
+  $("gapChart").innerHTML = s + "</svg>";
+}
+
+function renderWave(flash){
+  const v = $("waveVerdict");
+  const recent = wave.cycles.slice(-20).map(c => c.f);
+  const avg = recent.length ? recent.reduce((s, x) => s + x, 0) / recent.length : null;
+  const sd = recent.length > 1 ? Math.sqrt(recent.reduce((s, x) => s + (x - avg) ** 2, 0) / (recent.length - 1)) : null;
+  if (!wave.chain) {
+    v.className = "verdict idle";
+    v.innerHTML = `<div class="big">대기 중</div><div class="det">앉아대시가 이어질 때마다 횟수를 셉니다. ${WAVE_GAP}F(약 0.67초) 넘게 끊기면 새로 시작해요.</div>`;
+  } else {
+    v.className = "verdict " + (wave.live ? "ew" : "late") + (flash ? " flash" : "");
+    v.innerHTML = `<div class="big">${wave.chain}회${wave.live ? "" : " 끝"}</div>
+      <div class="det">${wave.live ? "웨이브 진행 중" : "마지막 연속 기록"}${avg ? ` · 1회당 평균 ${avg.toFixed(1)}F (초당 ${(60 / avg).toFixed(1)}회)` : ""}</div>
+      <div class="gap">${wave.lastErr ? "최근 실수: " + wave.lastErr : ""}</div>`;
+  }
+  $("waveStats").innerHTML = `
+    <div class="stat"><span>최고 연속</span><b>${wave.best}</b></div>
+    <div class="stat"><span>평균 주기 (최근 20)</span><b>${avg === null ? "—" : avg.toFixed(1) + "F"}</b></div>
+    <div class="stat"><span>주기 편차</span><b>${sd === null ? "—" : "±" + sd.toFixed(1) + "F"}</b></div>
+    <div class="stat"><span>입력 실수</span><b>${wave.errors}</b></div>`;
+  renderWaveChart();
+}
+
+function renderWaveChart(){
+  const W = 600, H = 160, L = 34, R = 590, top = 10, bot = 136;
+  const cs = wave.cycles.slice(-40);
+  const maxF = Math.max(24, ...cs.map(c => c.f));
+  const yMax = Math.ceil(maxF / 6) * 6;
+  const y = f => bot - f / yMax * (bot - top);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="웨이브 주기 막대그래프">`;
+  for (let t = 0; t <= yMax; t += yMax / 3) s += `<line x1="${L}" x2="${R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${t}F</text>`;
+  const slot = (R - L) / 40;
+  let prev = null, pos = 0;
+  cs.forEach(c => {
+    if (prev !== null && c.chain !== prev) pos += 0.6;
+    const bx = L + pos * slot + 2;
+    s += `<rect x="${bx}" y="${y(c.f)}" width="${Math.max(2, slot - 4)}" height="${bot - y(c.f)}" rx="2" fill="var(--volt)"/>`;
+    prev = c.chain; pos++;
+  });
+  if (!cs.length) s += `<text x="${W / 2}" y="${(top + bot) / 2}" text-anchor="middle">웨이브를 두 번 이상 이어가면 막대가 생겨요</text>`;
+  s += `<text x="${L}" y="${H - 4}">← 오래된 기록</text><text x="${R}" y="${H - 4}" text-anchor="end">최신 →</text>`;
+  $("waveChart").innerHTML = s + "</svg>";
+}
+
+function renderBinds(){
+  $("binds").innerHTML = ACTIONS.map(([a, label]) => `<div class="bind"><span>${label}</span><button id="bind-${a}" data-bind="${a}" class="${pendingBind === a ? "wait" : ""}">${pendingBind === a ? "키 입력…" : keyLabel(prefs.binds[a])}</button></div>`).join("");
+}
+function renderTop(){
+  $("mEwgf").setAttribute("aria-pressed", prefs.mode === "ewgf");
+  $("mWave").setAttribute("aria-pressed", prefs.mode === "wave");
+  $("ewgfPanel").hidden = prefs.mode !== "ewgf";
+  $("wavePanel").hidden = prefs.mode !== "wave";
+  $("sideBtn").textContent = prefs.side === 1 ? "1P · 오른쪽 보기" : "2P · 왼쪽 보기";
+  $("soundBtn").textContent = prefs.sound ? "소리 켬" : "소리 끔";
+  renderHow();
+}
+
+// ---- events ----
+let pendingBind = null;
+window.addEventListener("keydown", e => {
+  if (pendingBind) {
+    e.preventDefault();
+    if (e.code !== "Escape") {
+      const other = codeToAction[e.code];
+      if (other && other !== pendingBind) prefs.binds[other] = prefs.binds[pendingBind];
+      prefs.binds[pendingBind] = e.code;
+      rebuildMap(); save(); renderButtons(); renderHow();
+    }
+    pendingBind = null; renderBinds();
+    return;
+  }
+  const a = codeToAction[e.code];
+  if (!a) return;
+  e.preventDefault();
+  if (e.repeat) return;
+  onInput(a, true, e.timeStamp);
+});
+window.addEventListener("keyup", e => {
+  const a = codeToAction[e.code];
+  if (!a) return;
+  e.preventDefault();
+  onInput(a, false, e.timeStamp);
+});
+function releaseAll(){ const t = performance.now(); for (const a in held) if (held[a]) onInput(a, false, t); }
+function updateFocus(){ $("focusHint").hidden = document.hasFocus(); }
+window.addEventListener("blur", () => { releaseAll(); updateFocus(); });
+window.addEventListener("focus", updateFocus);
+$("focusHint").addEventListener("click", () => { window.focus(); updateFocus(); });
+
+document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => { prefs.mode = b.dataset.mode; save(); renderTop(); b.blur(); }));
+$("sideBtn").addEventListener("click", e => { releaseAll(); prefs.side = prefs.side === 1 ? 2 : 1; save(); renderTop(); e.currentTarget.blur(); });
+$("soundBtn").addEventListener("click", e => { prefs.sound = !prefs.sound; save(); renderTop(); e.currentTarget.blur(); });
+$("ewReset").addEventListener("click", e => { attempts.length = 0; renderEwgf(false); e.currentTarget.blur(); });
+$("waveReset").addEventListener("click", e => { Object.assign(wave, {last:null, chain:0, chainId:0, best:0, cycles:[], errors:0, lastErr:"", live:false}); renderWave(false); e.currentTarget.blur(); });
+$("binds").addEventListener("click", e => { const b = e.target.closest("[data-bind]"); if (!b) return; releaseAll(); pendingBind = b.dataset.bind; renderBinds(); });
+document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => { releaseAll(); prefs.binds = {...PRESETS[b.dataset.preset]}; rebuildMap(); save(); renderBinds(); renderButtons(); renderHow(); b.blur(); }));
+
+// live frame counter + wave chain timeout
+function tick(){
+  const now = frameOf(performance.now());
+  const lf = document.getElementById("liveF");
+  if (lf && segs.length) { const d = now + 1 - segs[segs.length - 1].frame; lf.textContent = (d > 99 ? "99+" : d) + "F"; }
+  if (wave.live && now - wave.last > WAVE_GAP) { wave.live = false; renderWave(false); }
+  requestAnimationFrame(tick);
+}
+
+buildStatic(); renderTop(); renderLive(); renderLog(); renderBinds(); renderEwgf(false); renderWave(false); updateFocus();
+requestAnimationFrame(tick);
+</script>
